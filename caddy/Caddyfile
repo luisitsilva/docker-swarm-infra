@@ -1,0 +1,296 @@
+# Global options
+{
+    # Admin API - restrict to localhost only
+    admin localhost:2019
+    
+    # Logging
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # Security headers
+    headers {
+        # HSTS (HTTP Strict Transport Security)
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        # Prevent MIME type sniffing
+        X-Content-Type-Options "nosniff"
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+        # Referrer policy
+        Referrer-Policy "no-referrer"
+        # Frame options
+        X-Frame-Options "DENY"
+        # Remote server info
+        -Server
+    }
+
+    # TLS settings
+    tls {
+        protocols tls1.2 tls1.3
+        curves x25519 secp384r1 secp256r1
+        ciphers TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+    }
+}
+
+# Define common headers for all services
+(common_headers) {
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-POlicy "no-referrer"
+        X-Frame-Options "DENY"
+    }
+}
+
+# Health check endpoint
+health.local {
+    respond "OK" 200
+}
+
+# Jenkins - devops stack
+jenkins.lab-urbanos.local {
+    import common_headers
+
+    # Reverse proxy to Jenkins
+    reverse_proxy devops_jenkins:8080 {
+        # Health checks
+        health_uri /login
+        health_interval 30s
+        health_timeout 10s
+
+        # Connection settings
+        transport http {
+            tls_insecure_skip_verify
+            keepalive 30s
+            dial_timeout 10s
+            response_header_timeout 30s
+        }
+
+        # Security
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+ 
+        # Circuit breaker
+        lb_policy random
+        max_conns 100
+    }
+    
+    # Rate limiting
+    rate_limit {
+        zone dynamic jenkins_zone {
+            key {remote_host}
+            events 10
+            window 1m
+        }
+    }
+}
+
+# SonarQube - devops stack
+sonar.lab-urbanos.local {
+    import common_headers
+
+    # Reverse proxy to SonarQube
+    reverse_proxy devops_sonarqube:9000 {
+        # Health checks
+        health_uri /api/system/status
+        health_interval 30s
+        health_timeout 10s
+    
+        # Connection settings
+        transport http {
+            tls_insecure_skip_verify
+            keepalive 30s
+            dial_timeout 10s
+            response_header_timeout 30s
+        }
+
+        # Security
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Circuit breaker
+        lb_policy random
+        max_conns 100
+    }
+
+    # Rate limiting
+    rate_limit {
+        zone dynamic sonar_zone {
+            key {remote_host}
+            events 50
+            window 1m
+        }
+    }
+}
+
+# Nexus - devops stack
+nexus.lab-urbanos.local {
+    import common_headers
+
+    # Reverse proxy to Nexus
+    reverse_proxy devops_nexus:8081 {
+        # Health checks
+        health_uri /service/rest/v1/status
+        health_interval 30s
+        health_timeout 10s
+        
+        # Connection settings
+        transport http {
+            tls_insecure_skip_verify
+            keepalive 30s
+            dial_timeout 10s
+            response_header_timeout 30s
+        }
+        
+        # Security
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Port {port}
+        
+        # Circuit breaker
+        lb_policy random
+        max_conns 100
+    }
+    
+    # Rate limiting
+    rate_limit {
+        zone dynamic nexus_zone {
+            key {remote_host}
+            events 20
+            window 1m
+        }
+    }
+}
+  
+# Grafana - monitoring stack
+grafana.lab-urbanos.local {
+    import common_headers
+    
+    # Reverse proxy to Grafana
+    reverse_proxy monitoring_grafana:3000 {
+        # Health checks
+        health_uri /api/health
+        health_interval 30s
+        health_timeout 10s
+        
+        # Connection settings
+        transport http {
+            tls_insecure_skip_verify
+            keepalive 30s
+            dial_timeout 10s
+            response_header_timeout 30s
+        }
+        
+        # Security
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # Circuit breaker
+        lb_policy random
+        max_conns 50
+    }
+    
+    # Rate limiting
+    rate_limit {
+        zone dynamic grafana_zone {
+            key {remote_host}
+            events 20
+            window 1m
+        }
+    }
+}
+
+# Prometheus - monitoring stack (if you want to expose it)
+prometheus.lab-urbanos.local {
+    import common_headers
+    
+    # Reverse proxy to Prometheus
+    reverse_proxy monitoring_prometheus:9090 {
+        # Health checks
+        health_uri /-/healthy
+        health_interval 30s
+        health_timeout 10s
+        
+        # Connection settings
+        transport http {
+            tls_insecure_skip_verify
+            keepalive 30s
+            dial_timeout 10s
+            response_header_timeout 30s
+        }
+        
+        # Security
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # Circuit breaker
+        lb_policy random
+        max_conns 50
+    }
+    
+    # Rate limiting
+    rate_limit {
+        zone dynamic prometheus_zone {
+            key {remote_host}
+            events 5
+            window 1m
+        }
+    }
+}
+
+# cAdvisor - monitoring stack (if you want to expose it)
+cadvisor.lab-urbanos.local {
+    import common_headers
+    
+    # Reverse proxy to cAdvisor
+    reverse_proxy monitoring_cadvisor:8080 {
+        # Health checks
+        health_uri /healthz
+        health_interval 30s
+        health_timeout 10s
+        
+        # Connection settings
+        transport http {
+            tls_insecure_skip_verify
+            keepalive 30s
+            dial_timeout 10s
+            response_header_timeout 30s
+        }
+        
+        # Security
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    
+    # Rate limiting
+    rate_limit {
+        zone dynamic cadvisor_zone {
+            key {remote_host}
+            events 5
+            window 1m
+        }
+    }
+}
+
+# Default catch-all - redirect to a landing page
+*.lab-urbanos.local {
+    import common_headers
+    
+    # Redirect to a default landing page
+    header Location "https://jenkins.lab-urbanos.local"
+    respond "Service not found" 404
+}
